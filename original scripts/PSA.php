@@ -58,7 +58,7 @@ function getDx($x, $rop, $maxsize) {
     return $result == ">500" ? round(($maxsize-$min) / (100-$minc) * ($x-$minc) + $min) : $result;
 }
 
-//calculates standard deviation and mean 
+//calculates standard deviation and mean
 function getStDev($data)
 {
     $sum = $vsum = 0;
@@ -75,7 +75,7 @@ function getStDev($data)
     return array('mean' => $mean, 'stdev' => $stdev);
 }
 
-$dirname = $_GET['dir']; 
+$dirname = $_GET['dir'];
 
 $dir = "./".$dirname."/";
 $limits = array(2,4,8,16,32,63,125,250,500); //Korngrenzen
@@ -111,11 +111,11 @@ while ($file = readDir($dirhandler)) {
                 $b[$i] += $a[$j];
             }
             $rop[$i] = 100/$max*$b[$i];
-            $ropoutoput += round($c[$i],2).", ";
+            $ropoutoput += round($rop[$i],2).", ";
         }
 
         $maxsize = max($lines);
-        $masked = round((100/3211520*$max), 2); 
+        $masked = round((100/3211520*$max), 2);
         $d95 = getDx(95, $rop, $maxsize);
 
         //grayscale analysis

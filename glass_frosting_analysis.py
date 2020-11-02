@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import filedialog
 import cv2
 import numpy as np
+import pandas as pd
 
 #remove root windows
 root = tk.Tk()
@@ -43,10 +44,10 @@ def getDx(x, rop, maxsize, limits):
     for i in range(limitsize):
         if rop[i] > x:
             result = round((limits[i]-min_val) / (rop[i] - min_c) * (x - min_c) + min_val)
-            i = limitsize        
+            i = limitsize-1
         min_val = limits[i]
         min_c = rop[i]
-        if i == limitsize:
+        if i == limitsize-1:
             break
 
     if result == ">500":
@@ -66,7 +67,7 @@ def getMinAndMax(image, histogram, bins, saturated=0.35):
         threshold = height*width*saturated/200
     else:
         threshold = 0
-    
+
     count = 0
     for i in range(hsize):
         count += histogram[i]
@@ -89,7 +90,7 @@ def stretchHistogram(image, saturated=0.35):
     hist, bins  = np.histogram(image.flatten(), bincount, [0,bincount])
     hmin, hmax = getMinAndMax(image, hist, bins, saturated)
     if hmax > hmin:
-        # difference in imageJ: 
+        # difference in imageJ:
         # double min = stats.histMin+hmin*stats.binSize;
         # double max = stats.histMin+hmax*stats.binSize;
         # [...]
@@ -100,90 +101,130 @@ def stretchHistogram(image, saturated=0.35):
         print('Fatal error while stretching histogram!')
     return image
 
+
+# slice the source image to smaller tiles, calculate the average grey value
+def get_grey_values( image, row_count, col_count ):
+    height, width = image.shape[:2]
+
+    #cropping width / height
+    crop_height = int(height/row_count)
+    crop_width = int(width/col_count)
+
+    grey_values = []
+
+    for i in range(row_count): # start at i = 0 to row_count-1
+        for j in range(col_count): # start at j = 0 to col_count-1
+            image_slice = image[(i*crop_height):((i+1)*crop_height), (j*crop_width):((j+1)*crop_width)]#  image.crop( ((j*crop_width), (i*crop_height), ((j+1)*crop_width), ((i+1)*crop_height)) )
+            grey_values.append( np.mean(image_slice) )
+
+    return grey_values
+
 if __name__ == '__main__':
     programInfo()
+
+    limits = [2, 4, 8, 16, 32, 63, 125, 250, 500] #particle size limits
+
+    # prepare pandas dataframe column names
+    extended_limits = limits + [1000]
+    pandas_columns = ['image']
+    last_border = 0
+    for limit in extended_limits:
+        pandas_columns.append( '{}-{}'.format(last_border, limit) )
+        last_border = limit
+    pandas_columns += ['masked (px)', 'masked (%)', 'd95', 'grey_mean', 'grey_std']
     working_directory = filedialog.askdirectory(title='Please select the working directory')
     image_count = 0
+
+    result_df = pd.DataFrame(columns = pandas_columns)
     if os.path.isdir(working_directory):
         # counting available CSV files
         for file in os.listdir(working_directory):
             if ( file.endswith( ".jpg" ) ):
                 image_count += 1
-        
+
         # processing CSV files
+        result_list = []
         pos = 0
         for file in os.listdir(working_directory):
             if ( file.endswith( ".jpg" ) ):
                 pos += 1
                 print('processing file {} ({:02d} of {:02d})'.format( file, pos, image_count ))
+                # basic file handling
+                basename = os.path.splitext(os.path.basename(file))[0]
+                output_directory = working_directory + '/cv/'
+                if not os.path.exists(output_directory):
+                    os.mkdir(output_directory)
+
                 # open image
                 image = cv2.imread(working_directory + os.sep + file)
-                #convert to grayscale
+                height, width = image.shape[:2]
+
+                # convert to grayscale
                 image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-                cv2.imwrite( working_directory + '/cv/' + os.path.splitext(os.path.basename(file))[0] + '_gs.jpg', image)
-                image = stretchHistogram(image)
+                #cv2.imwrite( output_directory + basename + '_gs.jpg', image)
 
-                cv2.imwrite( working_directory + '/cv/' + os.path.splitext(os.path.basename(file))[0] + '_eq.jpg', image)
+                # enhance histogram in a similar manner as in ImageJ
+                image = stretchHistogram(image, saturated=0.35)
+                #cv2.imwrite(output_directory + basename + '_eq.jpg', image)
 
+                # set a threshold of 130 and binarise the image
                 _, im_th = cv2.threshold(image, 130, 255, cv2.THRESH_BINARY)
-                
                 im_th_inv = cv2.bitwise_not(im_th)
-                cv2.imwrite( working_directory + '/cv/' + os.path.splitext(os.path.basename(file))[0] + '_th.png', im_th_inv)
-                
+                #cv2.imwrite( output_directory + basename + '_th.png', im_th_inv)
+
+                # get the particles and their respective area
                 contours, hierarchy = cv2.findContours(im_th, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    
                 areas = []
                 contourCount = len(contours)
                 for i in range(0, contourCount):
                     if cv2.contourArea(contours[i]) > 0:
                         areas.append(cv2.contourArea(contours[i]))
-                print(len(areas))
-                print('-'*10)
-                #height, width = image.shape[:2]
+                #print(len(areas))
+                #print('-'*10)
 
-                """
-                fWrite($handler , $type[0].", ");
+                # write to a dataframe and CSV
+                particle_df = pd.DataFrame()
 
-                #particle size analysis
-                lines = []]
-                $fp = @fopen($dir.$file, "r") or die (" Cant read file!");
-                while ($line = fgets($fp, 1024)) {
-                    $lines[] = intval($line);
-                }
-                fclose($fp);
+                particle_df = particle_df.append(areas, ignore_index=True)
+                particle_df.to_csv(output_directory + basename + '_psd.csv', index=False)
 
-                $max = getarea($lines, 0, "max");
+                a   = [] # list of sums of the particle sizes within given limits
+                b   = [] # list of sums of the particle sizes to the given limit
+                rop = [] # list of the "rate of passage" to the given limit
+                rop_output = ''
+                area_sum = sum(areas)
 
-                for ($i = 0; $i <= $limitsize; $i++) {
-                    $b[$i] = 0;
-                    if ($i == 0) {$lowerlimit = 0;}
-                    else {$lowerlimit = $limits[$i-1];}
-                    if ($i == $limitsize) {$upperlimit = "max";}
-                    else {$upperlimit = $limits[$i];}
+                for i in range(len(limits)):
+                    b.append(0)
 
-                    $a[$i] = getarea($lines, $lowerlimit, $upperlimit);
-                    for ($j = 0; $j <= $i; $j++) {
-                        $b[$i] += $a[$j];
-                    }
-                    $rop[$i] = 100/$max*$b[$i];
-                    $ropoutoput += round($c[$i],2).", ";
-                }
+                    if i == 0: lowerlimit = 0
+                    else: lowerlimit = limits[i-1]
 
-                $maxsize = max($lines);
-                $masked = round((100/3211520*$max), 2); 
-                $d95 = getDx(95, $rop, $maxsize);
+                    if i == len(limits): upperlimit = "max"
+                    else: upperlimit = limits[i]
 
-                //grayscale analysis
-                $grey = array();
-                $fp = @fopen($dir."gs".$type[0].".txt", "r") or die (" Cant read file!");
-                while ($line = fgets($fp, 1024)) {
-                    $grey[] = intval($line);
-                }
-                fclose($fp);
-                $sigma = getStDev($grey);
+                    a.append( getarea(areas, lowerlimit, upperlimit) )
+                    for j in range(i+1):
+                        b[i] += a[j]
 
-                //fileoutput
-                """
+                    rop.append( 100 / area_sum * b[i] )
+                    rop_output += str(round(rop[i],2)) + ", "
+
+                maxsize = np.amax(area_sum)
+                masked = round((100/(height*width)*area_sum), 2)
+                d95 = getDx(95, rop, maxsize, limits)
+
+                # grayscale analysis
+                grey = get_grey_values( im_th, row_count=2, col_count=3 )
+
+                # generate table of the results of every image
+                result_row = [basename] + rop + [100, maxsize, masked, d95, np.mean(grey), np.std(grey)]
+                result_list.append(result_row)
+                result_df = result_df.append(pd.Series(result_row, index=pandas_columns), ignore_index=True)
+
+        #result_df = result_df.append(pd.Series(result_list, index=pandas_columns), ignore_index=True)
+        print(result_df)
+        result_df.to_csv(output_directory + 'result.csv', index=False)
 
 """
 <?php
@@ -215,7 +256,7 @@ if __name__ == '__main__':
 
 //function to get the Dx-value, eg. D95
 
-//calculates standard deviation and mean 
+//calculates standard deviation and mean
 function getStDev($data)
 {
     $sum = $vsum = 0;
@@ -232,7 +273,7 @@ function getStDev($data)
     return array('mean' => $mean, 'stdev' => $stdev);
 }
 
-$dirname = $_GET['dir']; 
+$dirname = $_GET['dir'];
 
 $dir = "./".$dirname."/";
 $limits = array(2,4,8,16,32,63,125,250,500); //Korngrenzen
@@ -272,7 +313,7 @@ while ($file = readDir($dirhandler)) {
         }
 
         $maxsize = max($lines);
-        $masked = round((100/3211520*$max), 2); 
+        $masked = round((100/3211520*$max), 2);
         $d95 = getDx(95, $rop, $maxsize);
 
         //grayscale analysis
