@@ -6,6 +6,7 @@ These scripts can be used to analyse the quality of frosted glasware as describe
 The data in the paper were generated using an ImageJ macro `MAKRO.ijm` to calculate the size of the tips of the crystal-like structures and the mean grey values of the areas. The class `Calculate_Mean` is necessary to run the greyscale analysis. The script asks for the directory containing the images from the microscope. The resulting CSV files were stored within a child-folder called csv.
 Afterwards these raw data can be evaluated using the PHP script `PSA.php` which was called from command line in this way: `.\PSA.php?dir=DIRECTORY` (replace DIRECTORY with the path of the resulting csv data of the specimen).
 Finally, these data were examined using a spreadsheet.
+
 The files mentioned can be found in the folder `.\original scripts\`
 
 Requirements:
@@ -17,7 +18,7 @@ Requirements:
 Since the proposed method is hard to follow, the method will be translated to a easy to run python script.
 
 Requirements:
- * Python 3.
+ * Python 3.x
  * Python packages:
    * opencv-python
    * numpy
