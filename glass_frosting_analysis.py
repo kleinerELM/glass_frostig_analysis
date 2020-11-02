@@ -131,29 +131,36 @@ if __name__ == '__main__':
     for limit in extended_limits:
         pandas_columns.append( '{}-{}'.format(last_border, limit) )
         last_border = limit
-    pandas_columns += ['masked (px)', 'masked (%)', 'd95', 'grey_mean', 'grey_std']
-    working_directory = filedialog.askdirectory(title='Please select the working directory')
-    image_count = 0
+    pandas_columns += ['masked (px)', 'masked (%)', 'd95', 'grey 2x2 mean', 'grey 2x2 std', 'grey 5x3 mean', 'grey 5x3 std']
 
     result_df = pd.DataFrame(columns = pandas_columns)
+
+    working_directory = filedialog.askdirectory(title='Please select the working directory')
+    image_count = 0
     if os.path.isdir(working_directory):
+        # create output folder
+        output_directory = working_directory + '/cv/'
+        if not os.path.exists(output_directory):
+            os.mkdir(output_directory)
+
         # counting available CSV files
         for file in os.listdir(working_directory):
             if ( file.endswith( ".jpg" ) ):
                 image_count += 1
 
         # processing CSV files
-        result_list = []
+        result_list          = [] # list containing results of every single image
+        experiment_tile_list = {} # dictionary containing results of a single specimen (set of 9 images)
+        experiment_list      = {} # dictionary containing results of an 5 times repeated experiment (set of 5 x 9 images)
         pos = 0
         for file in os.listdir(working_directory):
             if ( file.endswith( ".jpg" ) ):
                 pos += 1
                 print('processing file {} ({:02d} of {:02d})'.format( file, pos, image_count ))
                 # basic file handling
+                # expecting a filename as follows: {experiment}_[a-e]_[1-9]
+                # eg: 0-0_a_1.jpg, HG_c_8.jpg
                 basename = os.path.splitext(os.path.basename(file))[0]
-                output_directory = working_directory + '/cv/'
-                if not os.path.exists(output_directory):
-                    os.mkdir(output_directory)
 
                 # open image
                 image = cv2.imread(working_directory + os.sep + file)
@@ -215,16 +222,21 @@ if __name__ == '__main__':
                 d95 = getDx(95, rop, maxsize, limits)
 
                 # grayscale analysis
-                grey = get_grey_values( im_th, row_count=2, col_count=3 )
+                grey_5_3 = get_grey_values( im_th, row_count=3, col_count=5 )
+                grey_2_2 = get_grey_values( im_th, row_count=2, col_count=2 )
 
                 # generate table of the results of every image
-                result_row = [basename] + rop + [100, maxsize, masked, d95, np.mean(grey), np.std(grey)]
+                result_row = [basename] + rop + [100, maxsize, masked, d95, np.mean(grey_2_2), np.std(grey_2_2), np.mean(grey_5_3), np.std(grey_5_3)]
                 result_list.append(result_row)
                 result_df = result_df.append(pd.Series(result_row, index=pandas_columns), ignore_index=True)
 
         #result_df = result_df.append(pd.Series(result_list, index=pandas_columns), ignore_index=True)
         print(result_df)
         result_df.to_csv(output_directory + 'result.csv', index=False)
+        #experiment_tile_columns = {'d95'=0, 'grey 2x2 mean'=0, 'grey 5x3 mean'=0}
+        #for index, row in result_df.iterrows:
+        #    basename_split = row['image'].split("_")
+        #    experiment_tile_list[basename_split[0] + '_' + basename_split[1]] += item['']
 
 """
 <?php
