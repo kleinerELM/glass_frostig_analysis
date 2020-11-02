@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import os, sys, getopt
+import os, sys
 import tkinter as tk
 from tkinter import filedialog
 import cv2
