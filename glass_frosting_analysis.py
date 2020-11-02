@@ -176,7 +176,7 @@ if __name__ == '__main__':
 
                 # set a threshold of 130 and binarise the image
                 _, im_th = cv2.threshold(image, 130, 255, cv2.THRESH_BINARY)
-                im_th_inv = cv2.bitwise_not(im_th)
+                #im_th_inv = cv2.bitwise_not(im_th)
                 #cv2.imwrite( output_directory + basename + '_th.png', im_th_inv)
 
                 # get the particles and their respective area
@@ -231,117 +231,41 @@ if __name__ == '__main__':
                 result_df = result_df.append(pd.Series(result_row, index=pandas_columns), ignore_index=True)
 
         #result_df = result_df.append(pd.Series(result_list, index=pandas_columns), ignore_index=True)
-        print(result_df)
+        #print(result_df)
         result_df.to_csv(output_directory + 'result.csv', index=False)
-        #experiment_tile_columns = {'d95'=0, 'grey 2x2 mean'=0, 'grey 5x3 mean'=0}
-        #for index, row in result_df.iterrows:
-        #    basename_split = row['image'].split("_")
-        #    experiment_tile_list[basename_split[0] + '_' + basename_split[1]] += item['']
-
-"""
-<?php
-// Particle Size Analysis Script
-// written by Florian Kleiner 2013
-//
-// important variables:
-// $a[]		array of sums of the particle sizes within given limits
-// $b[]		array of sums of the particle sizes to the given limit
-// $d95		D95 value
-// $grey[]	array of measured grey values
-// $limits[]	array of particle size limits
-// $limitsize	count of particle size limits
-// $lines[]	array of measured particle sizes
-// $lowerlimit	lower limit of particle sizes
-// $masked	masked area of the picture in percent
-// $max		masked area in pixel
-// $maxsize	size of the largest particle
-// $rop[]	array of the "rate of passage" to the given limit
-// $sigma[]	array,  contains standard deviation an mean value of the grey values
-// $upperlimit	upper limit of particle sizes
-//
-// all unmentioned variables are auxilary varibles
-//
-// call: PSA.php?dir=ORDNER
-// outputfile is a csv which must be further evaluated
+        for index, row in result_df.iterrows():
+            basename_split = row['image'].split("_")
+            key = basename_split[0] + '_' + basename_split[1]
+            if not key in experiment_tile_list:
+                experiment_tile_list[key] = {  
+                    'd95':           row['d95'], 
+                    'grey 2x2 mean': row['grey 2x2 mean'], 
+                    'grey 5x3 mean': row['grey 5x3 mean']
+                }
+            else:
+                experiment_tile_list[key]['d95']           += row['d95']
+                experiment_tile_list[key]['grey 2x2 mean'] += row['grey 2x2 mean']
+                experiment_tile_list[key]['grey 5x3 mean'] += row['grey 5x3 mean']
 
 
+        experiment_list['d95']           = 0
+        experiment_list['grey 2x2 mean'] = 0
+        experiment_list['grey 5x3 mean'] = 0
+        for key, row in experiment_tile_list.items():
+            experiment_tile_list[key]['d95']           = row['d95'] / 9
+            experiment_tile_list[key]['grey 2x2 mean'] = row['grey 2x2 mean'] / 9
+            experiment_tile_list[key]['grey 5x3 mean'] = row['grey 5x3 mean'] / 9
+            
+            experiment_list['d95']           += row['d95']
+            experiment_list['grey 2x2 mean'] += row['grey 2x2 mean']
+            experiment_list['grey 5x3 mean'] += row['grey 5x3 mean']
 
-//function to get the Dx-value, eg. D95
+        experiment_list['d95']           = experiment_list['d95'] / 5
+        experiment_list['grey 2x2 mean'] = experiment_list['grey 2x2 mean'] / 5
+        experiment_list['grey 5x3 mean'] = experiment_list['grey 5x3 mean'] / 5
+        
+        experiment_id = key.split("_")[0]
 
-//calculates standard deviation and mean
-function getStDev($data)
-{
-    $sum = $vsum = 0;
-    foreach ($data as $value) {
-        $sum += $value;
-    }
-    $mean = $sum / count($data);
-    foreach($data as $value) {
-       $tmp = $value - $mean;
-       $tmp *= $tmp;
-       $vsum += $tmp;
-    }
-    $stdev = sqrt( $vsum / (count($data)-1) );
-    return array('mean' => $mean, 'stdev' => $stdev);
-}
-
-$dirname = $_GET['dir'];
-
-$dir = "./".$dirname."/";
-$limits = array(2,4,8,16,32,63,125,250,500); //Korngrenzen
-$limitsize = count($limits);
-
-$handler = fopen( $dirname.".csv", "a+");
-
-$dirhandler = openDir($dir);
-while ($file = readDir($dirhandler)) {
-    $type = explode(".",$file);
-    if ($file != "." && $file != ".." && $type[count($type)-1]=="csv") {
-        fWrite($handler , $type[0].", ");
-
-        //particle size analysis
-        $lines = array();
-        $fp = @fopen($dir.$file, "r") or die (" Cant read file!");
-        while ($line = fgets($fp, 1024)) {
-            $lines[] = intval($line);
-        }
-        fclose($fp);
-
-        $max = getarea($lines, 0, "max");
-
-        for ($i = 0; $i <= $limitsize; $i++) {
-            $b[$i] = 0;
-            if ($i == 0) {$lowerlimit = 0;}
-              else {$lowerlimit = $limits[$i-1];}
-            if ($i == $limitsize) {$upperlimit = "max";}
-              else {$upperlimit = $limits[$i];}
-
-            $a[$i] = getarea($lines, $lowerlimit, $upperlimit);
-            for ($j = 0; $j <= $i; $j++) {
-                $b[$i] += $a[$j];
-            }
-            $rop[$i] = 100/$max*$b[$i];
-            $ropoutoput += round($c[$i],2).", ";
-        }
-
-        $maxsize = max($lines);
-        $masked = round((100/3211520*$max), 2);
-        $d95 = getDx(95, $rop, $maxsize);
-
-        //grayscale analysis
-        $grey = array();
-        $fp = @fopen($dir."gs".$type[0].".txt", "r") or die (" Cant read file!");
-        while ($line = fgets($fp, 1024)) {
-            $grey[] = intval($line);
-        }
-        fclose($fp);
-        $sigma = getStDev($grey);
-
-        //fileoutput
-        fWrite($handler , $ropoutoput.$maxsize.", ".$masked.", ".$d95.", ".round($sigma['mean'],1).", ".round($sigma['stdev'],2)."\n");
-    }
-}
-closeDir($dirhandler);
-fClose($handler)
-?>
-"""
+        print(experiment_tile_list)
+        print(experiment_id)
+        print(experiment_list)
