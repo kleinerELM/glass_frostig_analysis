@@ -281,13 +281,12 @@ class glass_frosting_analysis():
     def append_result(self, result_dict):
         self.experiment_results.append( result_dict )
 
-    # Change "save_intermediate_results" to True to get all intermediate results like images and CSVs
-    # These files will be stored in the folder "cv"
     def __init__( self, save_intermediate_results=False ):
-
         self.save_intermediate_results = save_intermediate_results
 
+        # get the directory containing the folders with the experiments
         self.experiments_directory = filedialog.askdirectory(title='Please select the directory containing the experiment directories...')
+
         if os.path.isdir(self.experiments_directory):
             # counting folders
             experiment_count = 0
@@ -298,6 +297,7 @@ class glass_frosting_analysis():
 
             print('Start processing {:02d} folders using {} threads'.format( experiment_count, self.processCount))
 
+            # iterate over all folders
             pool = multiprocessing.Pool(self.processCount)
             experiment_pos = 0
             for folder in os.listdir(self.experiments_directory):
@@ -311,9 +311,9 @@ class glass_frosting_analysis():
 
             print("\nFinished processing all experiments:\n")
 
+            # finalize, save and show the result table
             experiment_results_df = pd.DataFrame()
             experiment_results_df = experiment_results_df.append(self.experiment_results, ignore_index=True)
-            print(experiment_results_df)
             experiment_results_df = experiment_results_df.sort_values(by=['experiment'])
             experiment_results_df.to_csv(self.experiments_directory + os.sep + 'frosting result.csv', index=False)
 
@@ -323,7 +323,12 @@ class glass_frosting_analysis():
             print("These results are not identical with the original processing pipeline due to the differences in the historgram stretching algorithm!")
             print("To re-evaluate the original results, use the ImageJ/PHP pipeline. (or maybe fix the histogram stretching ;))")
 
+# start process
 if __name__ == '__main__':
     programInfo()
 
-    glass_frosting_analysis(save_intermediate_results=True)
+    # loading class glass_frosting_analysis
+
+    # Change "save_intermediate_results" to True to get all intermediate results like images and CSVs
+    # These files will be stored in the folder "cv"
+    glass_frosting_analysis(save_intermediate_results=False)
