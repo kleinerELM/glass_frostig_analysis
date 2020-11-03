@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
-import os, sys
+import os, sys, math
 import tkinter as tk
 from tkinter import filedialog
 import cv2
 import numpy as np
 import pandas as pd
+import subprocess
+from subprocess import check_output
+import multiprocessing
 
 #remove root windows
 root = tk.Tk()
@@ -13,7 +16,9 @@ root.withdraw()
 def programInfo():
     print("##########################################################")
     print("# Particle Size Analysis Script                          #")
-    print("# written for ImageJ and PHP 5.6 by Florian Kleiner 2013 #")
+    print("# originally written for ImageJ and PHP 5.6              #")
+    print("# by Florian Kleiner 2012/2013                           #")
+    print("#                                                        #")
     print("# translated to Python 3 by Florian Kleiner 2020         #")
     print("#                                                        #")
     print("# © 2020 Florian Kleiner                                 #")
@@ -119,10 +124,10 @@ def get_grey_values( image, row_count, col_count ):
 
     return grey_values
 
-if __name__ == '__main__':
-    programInfo()
-
-    limits = [2, 4, 8, 16, 32, 63, 125, 250, 500] #particle size limits
+class glass_frosting_analysis():
+    #particle size limits
+    limits = [2, 4, 8, 16, 32, 63, 125, 250, 500]
+    limitlen = len(limits)
 
     # prepare pandas dataframe column names
     extended_limits = limits + [1000]
@@ -133,30 +138,39 @@ if __name__ == '__main__':
         last_border = limit
     pandas_columns += ['masked (px)', 'masked (%)', 'd95', 'grey 2x2 mean', 'grey 2x2 std', 'grey 5x3 mean', 'grey 5x3 std']
 
-    result_df = pd.DataFrame(columns = pandas_columns)
+    save_intermediate_results = False
 
-    working_directory = filedialog.askdirectory(title='Please select the working directory')
-    image_count = 0
-    if os.path.isdir(working_directory):
+    experiment_results = []
+
+    # mutithreading variables
+    coreCount = multiprocessing.cpu_count()
+    processCount = (coreCount - 1) if coreCount > 1 else 1
+
+    # main process to get the relevant values
+    def process_experiment_folder( self, experiment_folder, experiment_pos, experiment_count=1, verbose=False ):
+
+        print(' {:02d}/{:02d}: processing folder "{}" ...'.format(experiment_pos, experiment_count, experiment_folder))
+
+        working_directory = self.experiments_directory + os.sep + experiment_folder + os.sep
+        result_df = pd.DataFrame(columns = self.pandas_columns)
         # create output folder
         output_directory = working_directory + '/cv/'
         if not os.path.exists(output_directory):
             os.mkdir(output_directory)
 
         # counting available CSV files
+        image_count = 0
         for file in os.listdir(working_directory):
             if ( file.endswith( ".jpg" ) ):
                 image_count += 1
 
         # processing CSV files
         result_list          = [] # list containing results of every single image
-        experiment_tile_list = {} # dictionary containing results of a single specimen (set of 9 images)
-        experiment_list      = {} # dictionary containing results of an 5 times repeated experiment (set of 5 x 9 images)
-        pos = 0
+        image_pos = 0
         for file in os.listdir(working_directory):
             if ( file.endswith( ".jpg" ) ):
-                pos += 1
-                print('processing file {} ({:02d} of {:02d})'.format( file, pos, image_count ))
+                image_pos += 1
+                if verbose: print('  {:02d}: processing file {} ({:02d} of {:02d})'.format( experiment_pos, file, image_pos, image_count ))
                 # basic file handling
                 # expecting a filename as follows: {experiment}_[a-e]_[1-9]
                 # eg: 0-0_a_1.jpg, HG_c_8.jpg
@@ -168,16 +182,15 @@ if __name__ == '__main__':
 
                 # convert to grayscale
                 image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-                #cv2.imwrite( output_directory + basename + '_gs.jpg', image)
+                if self.save_intermediate_results: cv2.imwrite( output_directory + basename + '_gs.jpg', image)
 
                 # enhance histogram in a similar manner as in ImageJ
                 image = stretchHistogram(image, saturated=0.35)
-                #cv2.imwrite(output_directory + basename + '_eq.jpg', image)
+                if self.save_intermediate_results: cv2.imwrite(output_directory + basename + '_eq.jpg', image)
 
                 # set a threshold of 130 and binarise the image
                 _, im_th = cv2.threshold(image, 130, 255, cv2.THRESH_BINARY)
-                #im_th_inv = cv2.bitwise_not(im_th)
-                #cv2.imwrite( output_directory + basename + '_th.png', im_th_inv)
+                if self.save_intermediate_results: cv2.imwrite( output_directory + basename + '_th.png', cv2.bitwise_not(im_th) )
 
                 # get the particles and their respective area
                 contours, hierarchy = cv2.findContours(im_th, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
@@ -186,14 +199,12 @@ if __name__ == '__main__':
                 for i in range(0, contourCount):
                     if cv2.contourArea(contours[i]) > 0:
                         areas.append(cv2.contourArea(contours[i]))
-                #print(len(areas))
-                #print('-'*10)
 
                 # write to a dataframe and CSV
-                particle_df = pd.DataFrame()
-
-                particle_df = particle_df.append(areas, ignore_index=True)
-                particle_df.to_csv(output_directory + basename + '_psd.csv', index=False)
+                if self.save_intermediate_results:
+                    particle_df = pd.DataFrame()
+                    particle_df = particle_df.append(areas, ignore_index=True)
+                    particle_df.to_csv(output_directory + basename + '_psd.csv', index=False)
 
                 a   = [] # list of sums of the particle sizes within given limits
                 b   = [] # list of sums of the particle sizes to the given limit
@@ -201,14 +212,14 @@ if __name__ == '__main__':
                 rop_output = ''
                 area_sum = sum(areas)
 
-                for i in range(len(limits)):
+                for i in range(self.limitlen):
                     b.append(0)
 
                     if i == 0: lowerlimit = 0
-                    else: lowerlimit = limits[i-1]
+                    else: lowerlimit = self.limits[i-1]
 
-                    if i == len(limits): upperlimit = "max"
-                    else: upperlimit = limits[i]
+                    if i == len(self.limits): upperlimit = "max"
+                    else: upperlimit = self.limits[i]
 
                     a.append( getarea(areas, lowerlimit, upperlimit) )
                     for j in range(i+1):
@@ -219,7 +230,7 @@ if __name__ == '__main__':
 
                 maxsize = np.amax(area_sum)
                 masked = round((100/(height*width)*area_sum), 2)
-                d95 = getDx(95, rop, maxsize, limits)
+                d95 = getDx(95, rop, maxsize, self.limits)
 
                 # grayscale analysis
                 grey_5_3 = get_grey_values( im_th, row_count=3, col_count=5 )
@@ -228,44 +239,91 @@ if __name__ == '__main__':
                 # generate table of the results of every image
                 result_row = [basename] + rop + [100, maxsize, masked, d95, np.mean(grey_2_2), np.std(grey_2_2), np.mean(grey_5_3), np.std(grey_5_3)]
                 result_list.append(result_row)
-                result_df = result_df.append(pd.Series(result_row, index=pandas_columns), ignore_index=True)
-
-        #result_df = result_df.append(pd.Series(result_list, index=pandas_columns), ignore_index=True)
-        #print(result_df)
-        result_df.to_csv(output_directory + 'result.csv', index=False)
-        for index, row in result_df.iterrows():
-            basename_split = row['image'].split("_")
-            key = basename_split[0] + '_' + basename_split[1]
-            if not key in experiment_tile_list:
-                experiment_tile_list[key] = {  
-                    'd95':           row['d95'], 
-                    'grey 2x2 mean': row['grey 2x2 mean'], 
-                    'grey 5x3 mean': row['grey 5x3 mean']
-                }
-            else:
-                experiment_tile_list[key]['d95']           += row['d95']
-                experiment_tile_list[key]['grey 2x2 mean'] += row['grey 2x2 mean']
-                experiment_tile_list[key]['grey 5x3 mean'] += row['grey 5x3 mean']
+                result_df = result_df.append(pd.Series(result_row, index=self.pandas_columns), ignore_index=True)
 
 
-        experiment_list['d95']           = 0
-        experiment_list['grey 2x2 mean'] = 0
-        experiment_list['grey 5x3 mean'] = 0
-        for key, row in experiment_tile_list.items():
-            experiment_tile_list[key]['d95']           = row['d95'] / 9
-            experiment_tile_list[key]['grey 2x2 mean'] = row['grey 2x2 mean'] / 9
-            experiment_tile_list[key]['grey 5x3 mean'] = row['grey 5x3 mean'] / 9
-            
-            experiment_list['d95']           += row['d95']
-            experiment_list['grey 2x2 mean'] += row['grey 2x2 mean']
-            experiment_list['grey 5x3 mean'] += row['grey 5x3 mean']
+        if self.save_intermediate_results:
+            result_df.to_csv(output_directory + 'result.csv', index=False)
 
-        experiment_list['d95']           = experiment_list['d95'] / 5
-        experiment_list['grey 2x2 mean'] = experiment_list['grey 2x2 mean'] / 5
-        experiment_list['grey 5x3 mean'] = experiment_list['grey 5x3 mean'] / 5
-        
-        experiment_id = key.split("_")[0]
+        if self.save_intermediate_results:
+            experiment_tile_list = {} # dictionary containing results of a single specimen (set of 9 images)
+            experiment_list      = {} # dictionary containing results of an 5 times repeated experiment (set of 5 x 9 images)
 
-        print(experiment_tile_list)
-        print(experiment_id)
-        print(experiment_list)
+            # process intermediate results for every specimen within an experiment row
+            for index, row in result_df.iterrows():
+                basename_split = row['image'].split("_")
+                key = basename_split[0] + '_' + basename_split[1]
+                if not key in experiment_tile_list:
+                    experiment_tile_list[key] = {
+                        'd95':           row['d95'],
+                        'grey 2x2 mean': row['grey 2x2 mean'],
+                        'grey 5x3 mean': row['grey 5x3 mean']
+                    }
+                else:
+                    experiment_tile_list[key]['d95']           += row['d95']
+                    experiment_tile_list[key]['grey 2x2 mean'] += row['grey 2x2 mean']
+                    experiment_tile_list[key]['grey 5x3 mean'] += row['grey 5x3 mean']
+
+            for key, row in experiment_tile_list.items():
+                experiment_tile_list[key]['d95']           = row['d95'] / 9
+                experiment_tile_list[key]['grey 2x2 mean'] = row['grey 2x2 mean'] / 9
+                experiment_tile_list[key]['grey 5x3 mean'] = row['grey 5x3 mean'] / 9
+
+            #TODO save as csv
+
+        result = {  'experiment':   experiment_folder,
+                    'log(d95)':     math.log10(result_df['d95'].mean()),
+                    'grey 2x2 mean std': result_df['grey 2x2 std'].mean(),
+                    'grey 5x3 mean std': result_df['grey 5x3 std'].mean() }
+        print(' {:02d}/{:02d}: finished "{}" ...'.format(experiment_pos, experiment_count, experiment_folder))
+        return result
+
+    def append_result(self, result_dict):
+        self.experiment_results.append( result_dict )
+
+    # Change "save_intermediate_results" to True to get all intermediate results like images and CSVs
+    # These files will be stored in the folder "cv"
+    def __init__( self, save_intermediate_results=False ):
+
+        self.save_intermediate_results = save_intermediate_results
+
+        self.experiments_directory = filedialog.askdirectory(title='Please select the directory containing the experiment directories...')
+        if os.path.isdir(self.experiments_directory):
+            # counting folders
+            experiment_count = 0
+            for folder in os.listdir(self.experiments_directory):
+                folder_path = self.experiments_directory + os.sep + folder + os.sep
+                if os.path.isdir(folder_path):
+                    experiment_count += 1
+
+            print('Start processing {:02d} folders using {} threads'.format( experiment_count, self.processCount))
+
+            pool = multiprocessing.Pool(self.processCount)
+            experiment_pos = 0
+            for folder in os.listdir(self.experiments_directory):
+                folder_path = self.experiments_directory + os.sep + folder + os.sep
+                if os.path.isdir(folder_path):
+                    experiment_pos += 1
+                    pool.apply_async(self.process_experiment_folder, args=(folder, experiment_pos, experiment_count), callback = self.append_result)
+
+            pool.close()
+            pool.join()
+
+            print("\nFinished processing all experiments:\n")
+
+            experiment_results_df = pd.DataFrame()
+            experiment_results_df = experiment_results_df.append(self.experiment_results, ignore_index=True)
+            print(experiment_results_df)
+            experiment_results_df = experiment_results_df.sort_values(by=['experiment'])
+            experiment_results_df.to_csv(self.experiments_directory + os.sep + 'frosting result.csv', index=False)
+
+            print(experiment_results_df)
+
+            print("\nDisclaimer:")
+            print("These results are not identical with the original processing pipeline due to the differences in the historgram stretching algorithm!")
+            print("To re-evaluate the original results, use the ImageJ/PHP pipeline. (or maybe fix the histogram stretching ;))")
+
+if __name__ == '__main__':
+    programInfo()
+
+    glass_frosting_analysis(save_intermediate_results=True)
