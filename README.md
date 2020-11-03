@@ -67,11 +67,11 @@ For some exported CSVs the scripts expects 9 images per specimen.
 
 ### Options
 
-Change "save_intermediate_results" to True to get all intermediate results like images and CSVs. These files will be stored in the folder `cv`.
+Change `save_intermediate_results` to `True` to get all intermediate results like images and CSVs. These files will be stored in the folder `cv`.
 
     glass_frosting_analysis(save_intermediate_results=True)
 
 ### Disclaimer
-The results processed with the python script are not identical with the original processing pipeline due to the differences in the histogram stretching algorithm!
+The results processed with the python script are not identical with the results from the original processing pipeline due to the differences in the histogram stretching algorithm!
 To re-evaluate the original results, use the ImageJ/PHP pipeline. Or maybe fix the histogram stretching algorithm to get the same results as ImageJ.
 Nevertheless, the evaluation has to be redone in any case for different specimens, since the images will slightly change due to different microscope parameters.
