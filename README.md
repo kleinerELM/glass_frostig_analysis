@@ -1,6 +1,8 @@
 # Glass frosting analysis
 
 These scripts can be used to analyse the quality of frosted glasware as described in the paper `Optimization and semi-automatic evaluation of a frosting process for a soda lime silicate glass based on phosphoric acid`.
+DOI: [10.1111/ijag.15866](https://ceramics.onlinelibrary.wiley.com/doi/10.1111/ijag.15866)
+
 
 ## Example image
 
